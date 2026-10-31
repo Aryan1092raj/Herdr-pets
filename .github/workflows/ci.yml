@@ -1,0 +1,20 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Run tests
+        run: node --test test/pets.test.mjs
+      - name: Check sprites and mod.json
+        run: |
+          python3 -c "import json, pathlib, xml.dom.minidom as m; [m.parse(str(p)) for p in pathlib.Path('mods/herdr-pets').glob('*.svg')]; json.load(open('mods/herdr-pets/mod.json'))"
