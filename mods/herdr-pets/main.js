@@ -140,7 +140,7 @@ function controls(t, shut) {
     .child(button("fold", shut ? "Show pets" : "Hide pets", () => fold(shut))
       .text_xs().line_height("16px").text_color(t.muted).child(shut ? "▴" : "▾"))
     .child(button("gear", "Pet settings", () => openOverlay({ mod: MOD, kind: "dialog", width: 300, height: 210, props: { panel: "settings" } }))
-      .child(svg("mods/workspace-chrome/settings.svg").size(11).text_color(t.muted)));
+      .child(svg(`mods/${MOD}/gear.svg`).size(11).text_color(t.muted)));
 }
 
 function settingsPanel(t) {
