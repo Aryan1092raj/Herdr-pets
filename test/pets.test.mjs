@@ -121,7 +121,7 @@ test("working children meet beside parents in phase one and both speak", () => {
 });
 
 test("working children wander during phase two when roaming", () => {
-  const out = agents(
+  const out = place(
     [
       { address: "parent", status: "idle" },
       { address: "child", status: "working", parent: "parent" },
@@ -130,11 +130,12 @@ test("working children wander during phase two when roaming", () => {
     400,
     2,
     true,
+    () => 1,
   );
   const parent = out.find(({ address }) => address === "parent");
   const child = out.find(({ address }) => address === "child");
   assert.equal(child.meet, false);
-  assert.equal(child.x, LEFT + (400 - SLOT - LEFT) * 0.5);
+  assert.equal(child.x, LEFT + SLOT + 160);
   assert.notEqual(child.x, parent.x + SLOT);
 });
 
@@ -219,12 +220,12 @@ test("a fast release throws the pet on, a slow one drops it in place", () => {
   assert.equal(landing([{ x: 500, t: 0 }, { x: 450, t: 50 }]), 50); // 1 px/ms left
 });
 
-test("idle pets shuffle a short way, other unblocked pets roam anywhere", () => {
+test("idle pets shuffle a short way, other unblocked pets walk at most 160 px a beat", () => {
   const list = [{ address: "sleepy", status: "idle" }, { address: "happy", status: "done" }];
   const prev = { sleepy: { x: 300 }, happy: { x: 300 } };
   const out = Object.fromEntries(place(list, prev, 1000, 2, true, () => 1).map((p) => [p.address, p.x]));
   assert.equal(out.sleepy, 360);
-  assert.equal(out.happy, 1000 - SLOT);
+  assert.equal(out.happy, 460);
 });
 
 test("a held pet stays where it was dropped, even blocked or as a child", () => {

@@ -19,7 +19,7 @@ A strip along the bottom of the window where every running agent is a small pixe
 
 ## How it behaves
 
-- A 3 s beat drives the motion. Each beat, working and done pets pick a new random spot and walk there at an even pace for the whole 3 s, so they never stop. Idle pets drift up to 60px either way.
+- A 3 s beat drives the motion. Each beat, working and done pets pick a new spot up to 160px either way and walk there at an even pace for the whole 3 s, so they stroll without stopping. Wandering helpers do the same. Idle pets drift up to 60px either way.
 - **blocked:** a blocked pet without a parent runs to the front in 700ms, easing out, lined up from the left in address order. It bounces 8px every 500ms, and its badge is a bold **!** in `blocked`.
 - **done:** hops 5px every 1100ms and shows a bold **✓** in `done`. The app turns done into idle once the person looks at the agent.
 - **working:** bobs 2px every 400ms. No badge.

@@ -7,6 +7,7 @@ export const PET = 28; // sprite size, px
 export const SLOT = 56; // width one pet takes on the strip, px
 export const LEFT = 40; // room for the fold arrow and the settings gear
 const SHUFFLE = 60; // how far an idle pet wanders in one beat, px
+const WANDER = 160; // how far a roaming pet walks in one beat, px: keeps them strolling
 const THROW = 0.3; // release speed that counts as a throw, px/ms
 const GLIDE = 400; // a thrown pet carries on for this many ms worth of its speed
 
@@ -101,13 +102,13 @@ export function place(list, prev, width, tick, roam, rand = Math.random, held = 
         x = beside;
         meet = phase === 1;
       } else if (roam) {
-        x = LEFT + rand() * (maxX - LEFT);
+        x = was + (rand() * 2 - 1) * WANDER;
       }
     } else if (p.status === "blocked") {
       x = LEFT + front++ * SLOT;
     } else if (roam && !(phase !== 2 && kids.some((c) => c.status === "working"))) {
       // A parent holds still while a working child walks over to chat.
-      x = p.status === "idle" ? was + (rand() * 2 - 1) * SHUFFLE : LEFT + rand() * (maxX - LEFT);
+      x = was + (rand() * 2 - 1) * (p.status === "idle" ? SHUFFLE : WANDER);
     }
     out.set(p.address, {
       ...p,
