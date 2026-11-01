@@ -21,7 +21,7 @@ Claude Code and Codex agents get their own sprite. Every other agent (cline, ope
 
 
 How it Looks in App:
-![HERDR-PETS strip with every kind of pet](preview.png)
+![HERDR-PETS strip with every kind of pet](docs/strip.png)
 ## What the pets do
 
 | Status | Pet |
