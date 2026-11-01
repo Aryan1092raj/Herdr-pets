@@ -8,7 +8,7 @@
 
 HERDR-PETS is a mod for the Herdr desktop app (herdr-app). Every running coding agent gets a small pixel pet in a strip at the bottom of the window. The pets roam, bounce, sleep and chat, so you can tell at a glance which agents are blocked, working, finished or idle.
 
-![HERDR-PETS strip with every kind of pet](preview.png)
+
 
 ## The pets
 
@@ -19,6 +19,9 @@ Claude Code and Codex agents get their own sprite. Every other agent (cline, ope
 | **claude-code** | **codex-openai** | **blob** | **cat** | **ghost** | **bot** |
 | Claude Code | Codex | any other agent | any other agent | any other agent | any other agent |
 
+
+How it Looks in App:
+![HERDR-PETS strip with every kind of pet](preview.png)
 ## What the pets do
 
 | Status | Pet |
