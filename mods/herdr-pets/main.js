@@ -83,7 +83,7 @@ export default class Pets extends View {
   }
 
   render(_cx) {
-    const t = theme();
+    const t = pureBlack(theme());
     if (isPanel()) return settingsPanel(t);
     const { on, color } = prefs();
     const shut = this.size.height < OPEN / 2;
@@ -114,6 +114,16 @@ export default class Pets extends View {
         .child(div().text_xs().text_color(t.dim).child(on ? "No agents yet" : "Pets are off")))
       .when(!shut, (el) => el.children(list.map((p) => pet(p, t, this, color))));
   }
+}
+
+// On a dark theme, surfaces go pure black; hover and selected stay a step lighter so they still show.
+function pureBlack(t) {
+  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(t.chrome).trim());
+  if (!m) return t;
+  const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join("") : m[1];
+  const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
+  if (0.2126 * r + 0.7152 * g + 0.0722 * b >= 128) return t;
+  return { ...t, chrome: "#000000", surface: "#000000", popover: "#000000", hover: "#1a1a1a", selected: "#1a1a1a" };
 }
 
 // The strip's node in the shown layout, so folding resizes only this block.

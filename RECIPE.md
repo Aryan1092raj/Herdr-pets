@@ -6,7 +6,7 @@ A strip along the bottom of the window where every running agent is a small pixe
 
 ## What you see
 
-- One block, 64px tall, docked at the bottom of the layout and filled with the theme's `chrome` color.
+- One block, 64px tall, docked at the bottom of the layout and filled with the theme's `chrome` color. When the theme is dark (`chrome` luminance under 128), `chrome`, `surface` and `popover` become pure `#000000` and `hover` and `selected` become `#1a1a1a`, so the strip, speech bubbles and settings dialog are black.
 - Two 14 × 16px buttons at its top-left corner, 4px in and 1px down, 2px apart, in `muted`: a `▾` fold arrow and an 11px gear icon. Each gets the `hover` background under the pointer. Pets keep 40px clear of the left edge so both stay clickable.
 - Pets standing on the strip's bottom edge, 2px up, one per agent, anywhere along the row. A pet is 56px wide and has three rows:
   - a 12px badge row: a status badge, a speech bubble while it chats, or hearts after a click;
