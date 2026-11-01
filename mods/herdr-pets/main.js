@@ -118,7 +118,7 @@ export default class Pets extends View {
 
 // On a dark theme, surfaces go pure black; hover and selected stay a step lighter so they still show.
 function pureBlack(t) {
-  const m = /^#?([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(String(t.chrome).trim());
+  const m = /^#([0-9a-f]{3}|[0-9a-f]{6})(?:[0-9a-f]{1,2})?$/i.exec(String(t.chrome).trim());
   if (!m) return t;
   const h = m[1].length === 3 ? [...m[1]].map((c) => c + c).join("") : m[1];
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16));
