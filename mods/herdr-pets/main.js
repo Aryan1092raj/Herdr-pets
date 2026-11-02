@@ -46,6 +46,7 @@ function prefs() {
     color: COLORS.includes(p.color) ? p.color : "status",
     sound: p.sound === true,
     kinds: map(p.kinds),
+    colors: map(p.colors), // address -> a pet's own color, over the shared one
     muted: map(p.muted),
     favs: map(p.favs),
     spots: map(p.spots),
@@ -87,7 +88,7 @@ function toggleMute(address) {
 }
 
 function openMenu(p) {
-  openOverlay({ mod: MOD, kind: "popup", width: 208, height: 262, props: { panel: "menu", address: p.address, label: p.label, x: p.x } });
+  openOverlay({ mod: MOD, kind: "popup", width: 208, height: 316, props: { panel: "menu", address: p.address, label: p.label, x: p.x } });
 }
 
 export default class Pets extends View {
@@ -202,7 +203,7 @@ export default class Pets extends View {
     const t = pureBlack(theme());
     if (panel() === "settings") return settingsPanel(t);
     if (panel() === "menu") return menuPanel(t, this);
-    const { on, color, favs, muted } = prefs();
+    const { on, color, favs, muted, colors } = prefs();
     const shut = this.size.height < OPEN / 2;
     if (on) this.layoutPets(false);
     // The dragged pet draws last, over the others.
@@ -242,7 +243,7 @@ export default class Pets extends View {
       .when(!shut && on && this.total > cap, (el) => el.child(pager(t, this, cap)))
       .when(!shut && (!on || list.length === 0), (el) => el.flex().items_center().justify_center()
         .child(div().text_xs().text_color(t.dim).child(on ? "No agents yet" : "Pets are off")))
-      .when(!shut, (el) => el.children(list.map((p) => pet(p, t, this, color, favs[p.address], muted[p.address]))));
+      .when(!shut, (el) => el.children(list.map((p) => pet(p, t, this, COLORS.includes(colors[p.address]) ? colors[p.address] : color, favs[p.address], muted[p.address]))));
   }
 }
 
@@ -332,13 +333,19 @@ function swatch(c, active, t, onClick) {
 // The right-click menu of one pet, a popup of this same mod.
 function menuPanel(t, view) {
   const { address, label, x } = props();
-  const { favs, muted, kinds } = prefs();
+  const { favs, muted, kinds, colors } = prefs();
   const row = (id, text, onClick, color = t.foreground) => div().id(id).h(26).px(8).flex().items_center().rounded(5)
     .cursor_pointer().text_color(color).hover((s) => s.bg(t.hover)).accessibility_label(text).on_click(onClick).child(text);
   const term = terminals().find((c) => c.address === address);
   const pane = panes().find((p) => p.terminal === address);
   const restart = term?.program?.agent && term.program.key ? [term.program.key] : null;
   const current = validKind(kinds[address]) ? kinds[address] : null;
+  const own = COLORS.includes(colors[address]) ? colors[address] : null;
+  const setColor = (c) => {
+    const { [address]: _old, ...rest } = colors;
+    save({ colors: c ? { ...colors, [address]: c } : rest });
+    closeOverlay(props().overlay);
+  };
   const cell = (k, content, tip) => div().id(`sprite-${k ?? "auto"}`).w(24).h(24).flex().items_center().justify_center().rounded(5)
     .cursor_pointer().border(1).border_color(k === current ? t.accent : t.border).bg(k === current ? t.selected : t.surface)
     .hover((s) => s.bg(t.hover)).tooltip(tip).accessibility_label(`Sprite ${tip}`)
@@ -363,6 +370,12 @@ function menuPanel(t, view) {
     }, t.blocked))
     .child(row("mute", muted[address] ? "Unmute sounds" : "Mute sounds", () => { toggleMute(address); closeOverlay(props().overlay); }))
     .child(row("fav", favs[address] ? "Remove star" : "Star (keeps its spot)", () => { toggleFav(address, x ?? LEFT); closeOverlay(props().overlay); }))
+    .child(div().px(8).pt(6).h(22).text_xs().text_color(t.dim).child("Color"))
+    .child(h_flex().px(4).gap(4).flex_wrap().items_center()
+      .child(div().id("color-auto").w(20).h(20).flex().items_center().justify_center().rounded(10).cursor_pointer()
+        .border(2).border_color(own ? t.border : t.foreground).text_xs().text_color(t.muted).tooltip("Same as the others")
+        .accessibility_label("Color: same as the others").on_click(() => setColor(null)).child("A"))
+      .children(COLORS.map((c) => swatch(c, c === own, t, () => setColor(c)))))
     .child(div().px(8).pt(6).h(22).text_xs().text_color(t.dim).child("Sprite"))
     .child(h_flex().px(4).gap(4).flex_wrap()
       .child(cell(null, div().text_xs().text_color(t.muted).child("A"), "Automatic"))
