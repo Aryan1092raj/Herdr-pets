@@ -20,7 +20,7 @@ A strip along the bottom of the window where every running agent is a small pixe
 ## How it behaves
 
 - A 3 s beat drives the motion. Each beat, working and done pets pick a new spot up to 160px either way and walk there at an even pace for the whole 3 s, so they stroll without stopping. Wandering helpers do the same. Idle pets drift up to 60px either way.
-- **blocked:** a blocked pet without a parent runs to the front in 700ms, easing out, lined up from the left in address order. It bounces 8px every 500ms, and its badge is a bold **!** in `blocked`.
+- **blocked:** a blocked or errored pet without a parent runs to the front in 700ms, easing out, lined up from the left in address order. A blocked one bounces 8px every 500ms, and its badge is a bold **!** in `blocked`. An errored one fades between 40% and 100% opacity every 800ms.
 - **done:** hops 5px every 1100ms and shows a bold **✓** in `done`. The app turns done into idle once the person looks at the agent.
 - **working:** bobs 2px every 400ms. No badge.
 - **idle:** fades between 50% and 80% opacity every 3.2 s, eyes shut, and its badge cycles `z`, `zz`, `zzz` every 700ms in `dim`.
@@ -36,13 +36,21 @@ A strip along the bottom of the window where every running agent is a small pixe
 - **Drag** a pet: it lifts 6px, draws over the others, and follows the pointer from the spot where it was grabbed. Releasing it, or leaving the strip, drops it there, and it stays for two beats before carrying on, even when blocked or a helper. A press that dragged doesn't count as a click.
 - **Throw**: if the pointer moved faster than 0.3px/ms over the last 100ms before release, the pet carries on by 400ms worth of that speed, gliding there in 800ms and easing out.
 - **Fold**: the `▾` arrow shrinks the strip to 18px, leaving only `▴` and the gear. `▴` brings it back to 64px with the pets where they were. A strip under 32px tall counts as folded, so the state survives reloads.
-- **Settings**: the gear opens a 300 × 210px dialog that shows only the settings, with 16px padding, 13px text and 14px gaps:
+- **Settings**: the gear opens a 300 × 340px dialog that shows only the settings, with 16px padding, 13px text and 14px gaps:
   - a semibold "Pets" title with a `✕` close button on the right;
   - "Show pets" with an On / Off pair; the chosen one has an `accent` border and the `selected` background. Off empties and folds the strip, On opens it again;
   - "Color" with a row of 20px round swatches: "By status" (four dots in the status colors, the default), then `accent` and `ansi1` to `ansi6`. The chosen one has a `foreground` ring, and picking one retints every pet;
   - a `dim` hint: "Click a pet for hearts, double-click to open its agent. Drag to move it, flick to throw it."
 
   Both choices are kept across restarts.
+- **More settings**: the dialog also has "Sound when blocked or done" (off by default; plays the app's `done` and `blocked` sounds, skipping pets muted in their menu), "Warn when an agent looks stuck" (on by default) and "Group pets by space" (off by default). All are kept across restarts, together with each pet's sprite, color, star, mute and dropped spot, keyed by terminal address.
+- **Right-click** a pet: a menu with focus, peek, show as pane, restart and kill (restart and kill ask for a second click), mute sounds, star, a color row and a sprite row. For a blocked agent it also lists the replies from `replies.json` (up to four, 80 characters each); a second click types the reply and presses Enter in that terminal. A starred pet sorts right after blocked ones and returns to its dropped spot after a restart.
+- **Keyboard**: click the strip, then the arrows, `Home` and `End` move a highlight; `Enter` focuses, `F` stars and `M` opens the menu. `N` focuses the next blocked or errored agent.
+- **Status detail**: progress (0 to 100) reported by the agent shows as a 3px bar under its sprite and in its tooltip, and a reported block reason (permission, question, auth) shows in the tooltip.
+- **Stuck warning**: on every 20th beat (60 s) the mod reads the last lines of each working terminal and keeps only a hash. If the hash has not changed for 10 minutes, the pet says "still on it?" and one toast names it.
+- **Group by space**: each space gets its own stretch of the strip, sized by its pet count, with a divider between stretches. Helpers stay in their parent's space.
+- **Lines and recap**: a line joins each helper to its parent. When two or more agents have all finished, one toast says how many and how long the longest took.
+- **Scroll**: when more agents run than fit, blocked ones are kept first, then starred ones, and the rest scroll with the wheel or `‹` `›` at the right end.
 
 ## Built from
 

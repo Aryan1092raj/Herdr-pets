@@ -156,9 +156,9 @@ export default class Pets extends View {
     this.recap = { runs: {}, finished: [] };
     this.replies = [];
     loadReplies().then((r) => { this.replies = r; });
-    cx.timer.every(POLL, () => this.poll());
     cx.timer.every(STEP, (cx) => {
       this.tick += 1;
+      if (this.tick % (POLL / STEP) === 0) this.poll(); // the beat is the only timer
       this.thrown = null;
       if (!prefs().on) return;
       this.layoutPets(true);
@@ -530,10 +530,10 @@ function pet(p, t, view, tint, fav, muted, stuck) {
 
   // The spot changes every STEP; the slide takes as long, so a roaming pet keeps walking.
   // A pet in hand keeps up with the pointer, a thrown one glides and slows to land,
-  // and a blocked one runs to the front.
+  // and a blocked or errored one runs to the front.
   const glide = dragging ? { duration: 30, easing: "linear" }
     : view.thrown === p.address ? { duration: 800, easing: "ease-out" }
-    : p.status === "blocked" ? { duration: 700, easing: "ease-out" }
+    : p.status === "blocked" || p.status === "error" ? { duration: 700, easing: "ease-out" }
     : { duration: STEP, easing: "linear" };
   return v_flex().id(`pet-${p.address}`).absolute().top(0).h_full().w(SLOT).left(p.x).justify_end().pb(2)
     .transition("left", glide)
