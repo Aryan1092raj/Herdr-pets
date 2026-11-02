@@ -19,6 +19,14 @@ Claude Code and Codex agents get their own sprite. Every other agent (cline, ope
 | **claude-code** | **codex-openai** | **blob** | **cat** | **ghost** | **bot** |
 | Claude Code | Codex | any other agent | any other agent | any other agent | any other agent |
 
+Four more creatures are there to pick by hand from a pet's right-click menu:
+
+| <img src="docs/sprites/frog.svg" width="56" alt="frog"> | <img src="docs/sprites/owl.svg" width="56" alt="owl"> | <img src="docs/sprites/bunny.svg" width="56" alt="bunny"> | <img src="docs/sprites/spike.svg" width="56" alt="spike"> |
+| :---: | :---: | :---: | :---: |
+| **frog** | **owl** | **bunny** | **spike** |
+
+You can add your own sprites, or install a community pack, with a folder and one line of JSON. See [docs/PACKS.md](docs/PACKS.md).
+
 
 How it Looks in App:
 ![HERDR-PETS strip with every kind of pet](docs/strip.png)
@@ -35,7 +43,7 @@ Awake pets blink now and then.
 
 ### Agents that start agents
 
-Agents started by another agent through herdr-core (`hc run`, for example a codex or cline helper) get their own pet, labelled with its hc name and linked to the agent that started it. A working helper walks over to its parent and the two chat in speech bubbles for a few seconds. The parent asks things like "need anything?", and the helper answers from its real status, such as "on it…". Then the helper wanders off and comes back. A blocked helper runs to its parent and says "stuck, help?", and the parent answers "on my way". A finished helper reports "done ✓", and the parent says "nice!". An agent's internal subagents are not hc terminals, so they don't appear.
+Agents started by another agent through herdr-core (`hc run`, for example a codex or cline helper) get their own pet, labelled with its hc name and linked to the agent that started it. A working helper walks over to its parent and the two chat in speech bubbles for a few seconds. The parent asks things like "need anything?", and the helper answers from its real status, such as "on it…". Each pet remembers its last few lines and picks a different one next time. Then the helper wanders off and comes back. A blocked helper runs to its parent and says "stuck, help?" or "need a hand", and the parent answers "on my way". A finished helper reports "done ✓", and the parent says "nice!". An agent's internal subagents are not hc terminals, so they don't appear.
 
 ## Play with them
 
@@ -45,16 +53,25 @@ Agents started by another agent through herdr-core (`hc run`, for example a code
 | Double-click a pet | focuses its agent |
 | Drag a pet | picks it up and moves it; it stays put for a moment after you drop it |
 | Flick and let go | throws it, and it glides to a stop |
-| Hover a pet | tooltip with its name and status |
+| Hover a pet | tooltip with its name, status, how long it has been working, and its task |
+| Right-click a pet | menu: focus, restart, kill (asks twice), mute sounds, star, and pick its sprite |
 | `▾` / `▴` at the left end | folds the strip to a thin bar, and opens it again |
 | `⚙` next to the arrow | opens the settings |
+| Scroll, or `‹` `›` at the right end | shows other pets when more agents run than fit |
+| Click the strip, then arrows, `Home`, `End` | moves a highlight between pets |
+| `Enter` / `F` / `M` on the highlighted pet | focuses its agent / stars it / opens its menu |
 
-The settings dialog has two choices, and they are kept across restarts:
+The settings dialog has three choices, and they are kept across restarts:
 
 - **Show pets**: on or off. Off folds the strip away.
+- **Sound when blocked or done**: off by default. Plays the app's attention sounds when a pet turns blocked or done. A pet muted in its menu stays quiet.
 - **Color**: by status (the default), or one of your theme's accent and ANSI colors for all pets.
 
-Each pet is labelled with its space name, or with its hc name when it has no pane. If more agents run than fit in the strip, blocked ones are kept first.
+A starred pet (★) sorts right after blocked ones, stays where you last dropped it, and returns there after a restart. Your sprite picks, stars and mutes are kept per terminal address.
+
+Each pet is labelled with its space name, or with its hc name when it has no pane. If more agents run than fit in the strip, blocked ones are kept first, then starred ones, and the rest scroll.
+
+The app reports only four statuses (working, blocked, done, idle) and no token counts or progress, so the pets show those four and the working time.
 
 ## Install
 
@@ -76,7 +93,7 @@ To remove it, delete `~/.config/herdr-app/mods/herdr-pets`.
 
 ## What it reads
 
-HERDR-PETS reads the app's live agent and terminal lists (`agents()` and `terminals()` from the `herdr` module, which include each terminal's parent and status report). It runs no programs, reads no files outside its folder, and makes no network requests. Its only actions are `agent.focus` when you double-click a pet and `layout.resize` on its own strip when you fold it. Your settings are stored with the app's `setShared`.
+HERDR-PETS reads the app's live agent and terminal lists (`agents()` and `terminals()` from the `herdr` module, which include each terminal's parent and status report). It runs no programs, reads no files outside its folder (only `packs/index.json`), and makes no network requests. Its actions are `agent.focus` when you double-click a pet or pick Focus, `layout.resize` on its own strip when you fold it, `terminal.kill` and `terminal.open` when you pick Kill or Restart from a pet's menu, and `playSound` when sound is on. Your settings are stored with the app's `setShared`.
 
 ## Develop
 
@@ -91,7 +108,8 @@ The mod lives in `mods/herdr-pets/`:
 
 - `main.js` draws the strip, the pets and the settings dialog, and handles the mouse.
 - `pets.js` holds placement, roaming, dialogue and throw logic, with no app imports.
-- `*.svg` are the six sprites and the settings gear. `docs/sprites/` holds tinted copies for this README.
+- `packs/index.json` lists extra sprite packs (see [docs/PACKS.md](docs/PACKS.md)).
+- `*.svg` are the ten sprites and the settings gear. `docs/sprites/` holds tinted copies for this README.
 - `mod.json` docks the strip at the bottom, 64 px tall.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and the [code of conduct](CODE_OF_CONDUCT.md).
