@@ -70,6 +70,59 @@ export function transitions(last, list) {
   return hit;
 }
 
+export const STUCK = 10 * 60_000; // ms of an unchanged screen while working before a pet looks stuck
+
+// Follows each working pet's screen signature `sig` (a hash the strip takes of its terminal now and then).
+// `watch` maps address -> { sig, at, warned } and is updated in place; the result is the pets that
+// just crossed `limit` with the same screen, once each.
+export function track(watch, list, now, limit = STUCK) {
+  const alive = new Set(list.map((p) => p.address));
+  for (const a of Object.keys(watch)) if (!alive.has(a)) delete watch[a];
+  const hit = [];
+  for (const p of list) {
+    const w = watch[p.address];
+    if (!w || w.sig !== p.sig || p.status !== "working") watch[p.address] = { sig: p.sig, at: now, warned: false };
+    else if (now - w.at >= limit && !w.warned) {
+      w.warned = true;
+      hit.push(p);
+    }
+  }
+  return hit;
+}
+
+// Whether a working pet's screen has been still for `limit`.
+export const stalled = (watch, p, now, limit = STUCK) => p.status === "working" && !!watch[p.address] && now - watch[p.address].at >= limit;
+
+// A message when a batch of agents has all finished, else null. `state` is { runs, finished }, updated in place:
+// a pet is active while working or blocked, and counts as finished once it settles into done or idle.
+export function recap(state, list, now) {
+  const active = new Set();
+  for (const p of list) {
+    if (p.status !== "working" && p.status !== "blocked") continue;
+    active.add(p.address);
+    state.runs[p.address] ??= p.since ?? now;
+  }
+  for (const [address, start] of Object.entries(state.runs)) {
+    if (active.has(address)) continue;
+    if (list.some((p) => p.address === address)) state.finished.push(now - start);
+    delete state.runs[address];
+  }
+  if (active.size > 0) return null;
+  const done = state.finished;
+  state.finished = [];
+  return done.length >= 2 ? `${done.length} agents finished, longest ${runtime(Math.max(...done))}` : null;
+}
+
+// Where to draw the line between each helper and its parent: from the left end, and how long.
+export function links(list) {
+  const byId = new Map(list.map((p) => [p.address, p]));
+  return list.filter((c) => byId.has(c.parent)).map((c) => {
+    const a = byId.get(c.parent).x + SLOT / 2;
+    const b = c.x + SLOT / 2;
+    return { x: Math.min(a, b), w: Math.abs(a - b), status: c.status };
+  });
+}
+
 // A line from `bank` for `who` that isn't among its last few. The pick holds for the whole tick,
 // so redraws don't change the bubble. `said` is the memory: address -> { tick, line, recent }.
 function pick(bank, who, tick, said, name) {
@@ -95,6 +148,10 @@ export function collect(terminals, agents, spaces = []) {
   const working = new Map(spaces.flatMap((s) => s.tabs ?? []).map((t) => [t.id, t.working_since]));
   const live = terminals.filter((t) => t.status && t.state !== "exited" && t.state !== "finished");
   const ids = new Set(live.map((t) => t.address));
+  // A helper without a pane belongs to its parent's space.
+  const spaceOf = new Map(agents.map((a) => [a.address, a.space]));
+  const byAddress = new Map(live.map((t) => [t.address, t]));
+  const group = (t, depth = 0) => spaceOf.get(t.address) ?? (depth < 8 && byAddress.has(t.parent) ? group(byAddress.get(t.parent), depth + 1) : "");
   return live.map((t) => ({
     address: t.address,
     status: t.status,
@@ -103,6 +160,7 @@ export function collect(terminals, agents, spaces = []) {
     parent: ids.has(t.parent) ? t.parent : null,
     title: title.get(t.address)?.text ?? null,
     since: t.status === "working" ? working.get(title.get(t.address)?.tab) ?? null : null,
+    group: group(t),
   }));
 }
 
@@ -128,11 +186,11 @@ export function landing(trail) {
 //
 // `opts`: `favs` ({address: true}) sorts favorites right after blocked pets; `offset` scrolls
 // the strip when more pets run than fit; `kinds` ({address: sprite}) overrides the art;
-// `said` is the dialogue memory (see `pick`).
+// `said` is the dialogue memory (see `pick`); `group` gives each space its own stretch of the
+// strip (sized by how many pets it has), and every pet then carries its stretch as `seg`.
 export function place(list, prev, width, tick, roam, rand = Math.random, held = new Set(), opts = {}) {
-  const { favs = {}, offset = 0, kinds = {}, said = {} } = opts;
+  const { favs = {}, offset = 0, kinds = {}, said = {}, group = false } = opts;
   const maxX = Math.max(LEFT, width - SLOT);
-  const clamp = (x) => Math.min(maxX, Math.max(LEFT, Math.round(x)));
   const byId = new Map(list.map((p) => [p.address, p]));
   const max = capacity(width);
   const rank = (p) => (p.status === "blocked" ? 0 : favs[p.address] ? 1 : 2 + (ORDER[p.status] ?? 4));
@@ -144,20 +202,36 @@ export function place(list, prev, width, tick, roam, rand = Math.random, held = 
   const phase = tick % 3; // 0: walk to parent, 1: chat, 2: wander
 
   const childrenOf = (id) => shown.filter((c) => c.parent === id);
-  let front = 0;
+  // Each pet's stretch of the strip [lo, hi]: all of it, or its space's share when grouped.
+  const segOf = new Map(shown.map((p) => [p.address, { lo: LEFT, hi: maxX }]));
+  if (group && shown.length > 0) {
+    const keys = [...new Set(shown.map((p) => p.group ?? ""))].sort();
+    const avail = maxX + SLOT - LEFT;
+    let before = 0;
+    for (const key of keys) {
+      const members = shown.filter((p) => (p.group ?? "") === key);
+      const lo = LEFT + Math.round((before * avail) / shown.length);
+      const end = LEFT + Math.round(((before + members.length) * avail) / shown.length);
+      for (const m of members) segOf.set(m.address, { lo, hi: Math.max(lo, end - SLOT) });
+      before += members.length;
+    }
+  }
+  const front = new Map(); // stretch start -> blocked pets already at its front
   // Parents before children (any depth), so a child can stand next to where its parent is now.
   const depth = (p, seen = 0) => (byId.has(p.parent) && seen < list.length ? 1 + depth(byId.get(p.parent), seen + 1) : 0);
   for (const p of [...shown].sort((a, b) => depth(a) - depth(b))) {
     const seed = hash(p.address);
     const kids = childrenOf(p.address);
     const parent = out.get(p.parent);
-    const was = prev[p.address]?.x ?? clamp(LEFT + (seed % (maxX - LEFT + 1)));
+    const seg = segOf.get(p.address);
+    const clamp = (x) => Math.min(seg.hi, Math.max(seg.lo, Math.round(x)));
+    const was = prev[p.address]?.x ?? clamp(seg.lo + (seed % (seg.hi - seg.lo + 1)));
     let x = was;
     let meet = false;
     if (held.has(p.address)) {
       // Left where the person put it.
     } else if (parent) {
-      const beside = parent.x + SLOT <= maxX ? parent.x + SLOT : parent.x - SLOT;
+      const beside = parent.x + SLOT <= seg.hi ? parent.x + SLOT : parent.x - SLOT;
       if (p.status !== "working") {
         x = beside;
         meet = true;
@@ -168,7 +242,8 @@ export function place(list, prev, width, tick, roam, rand = Math.random, held = 
         x = was + (rand() * 2 - 1) * WANDER;
       }
     } else if (p.status === "blocked") {
-      x = LEFT + front++ * SLOT;
+      x = seg.lo + (front.get(seg.lo) ?? 0) * SLOT;
+      front.set(seg.lo, (front.get(seg.lo) ?? 0) + 1);
     } else if (roam && !(phase !== 2 && kids.some((c) => c.status === "working"))) {
       // A parent holds still while a working child walks over to chat.
       x = was + (rand() * 2 - 1) * (p.status === "idle" ? SHUFFLE : WANDER);
@@ -178,6 +253,7 @@ export function place(list, prev, width, tick, roam, rand = Math.random, held = 
       seed,
       kind: kinds[p.address] ?? kindFor(p.app, seed),
       x: clamp(x),
+      seg: group ? seg : null,
       meet,
       say: null,
     });

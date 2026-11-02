@@ -1,7 +1,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  hash, collect, place, kindFor, landing, runtime, describe, transitions, capacity,
+  hash, collect, place, kindFor, landing, runtime, describe, transitions, capacity, track, stalled, recap, links, STUCK,
   KINDS, EXTRA, SPRITES, ANSWER, REPLY, SLOT, LEFT,
 } from "../mods/herdr-pets/pets.js";
 
@@ -32,8 +32,8 @@ test("collect keeps only live terminals with status and resolves labels", () => 
   );
 
   assert.deepEqual(out, [
-    { address: "space", status: "working", app: null, label: "The Space", parent: null, title: null, since: null },
-    { address: "plain", status: "blocked", app: null, label: "hc-plain", parent: null, title: null, since: null },
+    { address: "space", status: "working", app: null, label: "The Space", parent: null, title: null, since: null, group: "" },
+    { address: "plain", status: "blocked", app: null, label: "hc-plain", parent: null, title: null, since: null, group: "" },
   ]);
 });
 
@@ -299,4 +299,80 @@ test("a speaker does not repeat its recent lines, and a tick's line holds across
   assert.equal(line(10), seen[3]);
   assert.equal(new Set(seen).size, seen.length);
   assert.ok(seen.every((s) => ANSWER.working.includes(s)));
+});
+
+test("a working pet whose screen stays the same for the limit is flagged once, and any change resets it", () => {
+  const watch = {};
+  const pet = (sig, status = "working") => [{ address: "a", status, sig }];
+  assert.deepEqual(track(watch, pet("x"), 0, 1000), []);
+  assert.deepEqual(track(watch, pet("x"), 999, 1000), []);
+  assert.equal(stalled(watch, pet("x")[0], 999, 1000), false);
+  assert.deepEqual(track(watch, pet("x"), 1000, 1000).map((p) => p.address), ["a"]);
+  assert.equal(stalled(watch, pet("x")[0], 1000, 1000), true);
+  assert.deepEqual(track(watch, pet("x"), 5000, 1000), []); // already warned
+  assert.deepEqual(track(watch, pet("y"), 5001, 1000), []); // new screen: reset
+  assert.equal(stalled(watch, pet("y")[0], 5002, 1000), false);
+  assert.deepEqual(track(watch, pet("y", "blocked"), 9000, 1000), []); // only working pets stall
+  assert.ok(STUCK > 0);
+});
+
+test("track forgets pets that are gone", () => {
+  const watch = {};
+  track(watch, [{ address: "a", status: "working", sig: 1 }], 0);
+  track(watch, [], 1);
+  assert.deepEqual(watch, {});
+});
+
+test("recap speaks once a batch of two or more agents has all finished", () => {
+  const state = { runs: {}, finished: [] };
+  const at = (now, ...pets) => recap(state, pets.map(([address, status, since]) => ({ address, status, since })), now);
+  assert.equal(at(0, ["a", "working", 0], ["b", "working", 0]), null);
+  assert.equal(at(60_000, ["a", "done"], ["b", "working", 0]), null); // b is still going
+  assert.equal(at(192_000, ["a", "done"], ["b", "idle"]), "2 agents finished, longest 3m 12s");
+  assert.equal(at(200_000, ["a", "done"], ["b", "idle"]), null); // said once
+});
+
+test("recap stays quiet for one agent, and a blocked agent keeps the batch open", () => {
+  const state = { runs: {}, finished: [] };
+  const at = (now, ...pets) => recap(state, pets.map(([address, status]) => ({ address, status })), now);
+  at(0, ["a", "working"]);
+  assert.equal(at(5000, ["a", "done"]), null);
+  at(6000, ["a", "working"], ["b", "working"]);
+  at(7000, ["a", "done"], ["b", "blocked"]);
+  assert.equal(at(8000, ["a", "done"], ["b", "blocked"]), null);
+  assert.equal(at(9000, ["a", "done"], ["b", "done"]), "2 agents finished, longest 3s");
+});
+
+test("links join each helper to a parent that is shown", () => {
+  const out = links([
+    { address: "p", x: 100 },
+    { address: "c", x: 100 + SLOT * 2, parent: "p", status: "working" },
+    { address: "o", x: 400, parent: "gone", status: "idle" },
+  ]);
+  assert.deepEqual(out, [{ x: 100 + SLOT / 2, w: SLOT * 2, status: "working" }]);
+});
+
+test("grouped pets stay inside their own space's stretch, blocked ones at its front", () => {
+  const width = LEFT + SLOT * 4;
+  const list = [
+    { address: "a1", status: "idle", group: "A" },
+    { address: "a2", status: "blocked", group: "A" },
+    { address: "b1", status: "working", group: "B" },
+    { address: "b2", status: "blocked", group: "B" },
+  ];
+  const out = place(list, {}, width, 2, true, () => 1, new Set(), { group: true });
+  const at = Object.fromEntries(out.map((p) => [p.address, p]));
+  assert.deepEqual(at.a1.seg, { lo: LEFT, hi: LEFT + SLOT });
+  assert.deepEqual(at.b1.seg, { lo: LEFT + SLOT * 2, hi: LEFT + SLOT * 3 });
+  assert.equal(at.a2.x, LEFT);
+  assert.equal(at.b2.x, LEFT + SLOT * 2);
+  for (const p of out) assert.ok(p.x >= p.seg.lo && p.x <= p.seg.hi, p.address);
+});
+
+test("collect puts a pane-less helper in its parent's space", () => {
+  const out = collect(
+    [terminal("p", "working"), terminal("kid", "working", { parent: "p" })],
+    [{ address: "p", space: "sp1" }],
+  );
+  assert.deepEqual(out.map((p) => p.group), ["sp1", "sp1"]);
 });
