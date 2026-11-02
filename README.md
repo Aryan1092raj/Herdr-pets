@@ -35,6 +35,7 @@ How it Looks in App:
 | Status | Pet |
 | --- | --- |
 | `blocked` | runs to the front (left end) of the strip, bounces fast and shows **!** |
+| `error` | runs to the front too, flashes and shows **✗** |
 | `done` | roams while it hops and shows **✓** (the app turns done into idle once you look at the agent) |
 | `working` | roams the whole strip, picking a new spot every 3 seconds |
 | `idle` | shuts its eyes, breathes with `zzz` and drifts a little each beat |
@@ -53,25 +54,40 @@ Agents started by another agent through herdr-core (`hc run`, for example a code
 | Double-click a pet | focuses its agent |
 | Drag a pet | picks it up and moves it; it stays put for a moment after you drop it |
 | Flick and let go | throws it, and it glides to a stop |
-| Hover a pet | tooltip with its name, status, how long it has been working, and its task |
-| Right-click a pet | menu: focus, restart, kill (asks twice), mute sounds, star, and pick its color and sprite |
+| Hover a pet | tooltip with its name, status, how long it has been working, its progress and its task |
+| Right-click a pet | menu: focus, peek, show as pane, restart, kill (asks twice), quick replies for a blocked agent (ask twice), mute sounds, star, and pick its color and sprite |
 | `▾` / `▴` at the left end | folds the strip to a thin bar, and opens it again |
 | `⚙` next to the arrow | opens the settings |
 | Scroll, or `‹` `›` at the right end | shows other pets when more agents run than fit |
 | Click the strip, then arrows, `Home`, `End` | moves a highlight between pets |
 | `Enter` / `F` / `M` on the highlighted pet | focuses its agent / stars it / opens its menu |
+| `N` | jumps to the next blocked or errored agent and opens it |
 
-The settings dialog has three choices, and they are kept across restarts:
+The settings dialog has five choices, and they are kept across restarts:
 
 - **Show pets**: on or off. Off folds the strip away.
 - **Sound when blocked or done**: off by default. Plays the app's attention sounds when a pet turns blocked or done. A pet muted in its menu stays quiet.
+- **Warn when an agent looks stuck**: on by default. Every minute the mod reads the last lines of each working terminal and keeps only a hash of them. If a working agent's screen has not changed for 10 minutes, its pet says "still on it?" and one toast names it.
+- **Group pets by space**: off by default. Each space gets its own stretch of the strip, sized by its pet count, with a divider between stretches. Helpers stay in their parent's space.
 - **Color**: by status (the default), or one of your theme's accent and ANSI colors for all pets.
 
 A starred pet (★) sorts right after blocked ones, stays where you last dropped it, and returns there after a restart. Your sprite picks, stars and mutes are kept per terminal address.
 
 Each pet is labelled with its space name, or with its hc name when it has no pane. If more agents run than fit in the strip, blocked ones are kept first, then starred ones, and the rest scroll.
 
-The app reports only four statuses (working, blocked, done, idle) and no token counts or progress, so the pets show those four and the working time.
+An agent that reports its own progress (0 to 100) gets a thin bar under its sprite and the percentage in its tooltip, and the words it reports for its task replace the terminal title there. A blocked agent that says why (permission, question, auth) shows the reason. The app gives no token counts, so none are shown.
+
+A line joins each helper to the agent that started it. When two or more agents have all finished, one toast says how many and how long the longest took.
+
+### Quick replies
+
+A blocked pet's menu lists the replies in `mods/herdr-pets/replies.json`:
+
+```json
+{ "replies": ["continue"] }
+```
+
+Picking one asks you to click again, then types the text and presses Enter in that terminal (`hc send --force`). Only your click sends anything; add replies such as `y` yourself if you want them. The file takes up to four replies of 80 characters each.
 
 ## Install
 
@@ -93,7 +109,7 @@ To remove it, delete `~/.config/herdr-app/mods/herdr-pets`.
 
 ## What it reads
 
-HERDR-PETS reads the app's live agent and terminal lists (`agents()` and `terminals()` from the `herdr` module, which include each terminal's parent and status report). It runs no programs, reads no files outside its folder (only `packs/index.json`), and makes no network requests. Its actions are `agent.focus` when you double-click a pet or pick Focus, `layout.resize` on its own strip when you fold it, `terminal.kill` and `terminal.open` when you pick Kill or Restart from a pet's menu, and `playSound` when sound is on. Your settings are stored with the app's `setShared`.
+HERDR-PETS reads the app's live agent and terminal lists (`agents()` and `terminals()` from the `herdr` module, which include each terminal's parent and status report). It makes no network requests and reads no files outside its folder (`packs/index.json` and `replies.json`). It runs `hc read` on working terminals once a minute to compare screens, and `hc send` only when you click a quick reply. Its actions are `agent.focus` when you double-click a pet or pick Focus, `layout.resize` on its own strip when you fold it, `terminal.kill` and `terminal.open` when you pick Kill or Restart from a pet's menu, and `playSound` when sound is on. Your settings are stored with the app's `setShared`.
 
 ## Develop
 
@@ -108,7 +124,7 @@ The mod lives in `mods/herdr-pets/`:
 
 - `main.js` draws the strip, the pets and the settings dialog, and handles the mouse.
 - `pets.js` holds placement, roaming, dialogue and throw logic, with no app imports.
-- `packs/index.json` lists extra sprite packs (see [docs/PACKS.md](docs/PACKS.md)).
+- `packs/index.json` lists extra sprite packs (see [docs/PACKS.md](docs/PACKS.md)). `replies.json` lists the quick replies.
 - `*.svg` are the ten sprites and the settings gear. `docs/sprites/` holds tinted copies for this README.
 - `mod.json` docks the strip at the bottom, 64 px tall.
 
