@@ -1,6 +1,9 @@
 // Placement and dialogue logic with no herdr or gpui imports, so `node --test` can run it.
 
 export const KINDS = ["blob", "cat", "ghost", "bot"];
+// Creatures only a person can pick (the automatic choice stays within KINDS, so existing pets keep their art).
+export const EXTRA = ["frog", "owl", "bunny", "spike"];
+export const SPRITES = [...KINDS, ...EXTRA, "claude-code", "codex-openai"];
 // Agents whose app is known get their own creature; every other agent gets one of KINDS.
 const APP_KINDS = [[/^claude/, "claude-code"], [/^codex/, "codex-openai"]];
 export const PET = 28; // sprite size, px
@@ -12,14 +15,19 @@ const THROW = 0.3; // release speed that counts as a throw, px/ms
 const GLIDE = 400; // a thrown pet carries on for this many ms worth of its speed
 
 const ORDER = { blocked: 0, done: 1, working: 2, idle: 3 };
-const ASK = ["how's it going?", "need anything?", "status?", "all good?"];
-const ANSWER = {
-  working: ["on it…", "almost there", "reading files", "running tests"],
-  blocked: ["stuck, help?"],
-  done: ["done ✓"],
-  idle: ["waiting…"],
+const REMEMBER = 4; // lines a pet won't repeat until it has said this many others
+// "{name}" becomes the helper's label.
+export const ASK = ["how's it going?", "need anything?", "status?", "all good?", "{name}, how's it looking?", "any news?", "shout if you're stuck", "how far along?"];
+export const ANSWER = {
+  working: ["on it…", "almost there", "reading files", "running tests", "making progress", "checking the diff", "one more thing…", "nearly through"],
+  blocked: ["stuck, help?", "need a hand", "waiting on you", "blocked, sorry"],
+  done: ["done ✓", "all finished", "that's a wrap", "finished, check it?"],
+  idle: ["waiting…", "nothing to do", "just resting", "ready when you are"],
 };
-const REPLY = { blocked: "on my way", done: "nice!" };
+export const REPLY = {
+  blocked: ["on my way", "coming!", "hold on, {name}", "let me look"],
+  done: ["nice!", "good job, {name}", "thanks!", "great work"],
+};
 
 // FNV-1a: the same address always gets the same art and starting spot.
 export function hash(text) {
@@ -33,12 +41,58 @@ export function kindFor(app, seed) {
   return hit ? hit[1] : KINDS[seed % KINDS.length];
 }
 
+// How many pets fit on a strip of this width.
+export const capacity = (width) => Math.max(1, Math.floor((width - LEFT) / SLOT));
+
+// "45s", "3m 12s", "1h 5m".
+export function runtime(ms) {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ${s % 60}s`;
+  return `${Math.floor(s / 3600)}h ${Math.floor((s % 3600) / 60)}m`;
+}
+
+// Tooltip and screen-reader text: name, status (with how long it has been working), and the agent's task.
+export function describe(p, now) {
+  const status = p.status === "working" && p.since ? `working ${runtime(now - p.since)}` : p.status;
+  const task = p.title && p.title !== p.label ? p.title.slice(0, 80) : null;
+  return [p.label, status, task].filter(Boolean).join(" · ");
+}
+
+// Pets that just turned blocked or done, given the statuses seen last time (updated in place).
+// A pet seen for the first time is not a change, so a restart stays quiet.
+export function transitions(last, list) {
+  const hit = [];
+  for (const p of list) {
+    if (last[p.address] && last[p.address] !== p.status && (p.status === "blocked" || p.status === "done")) hit.push(p);
+    last[p.address] = p.status;
+  }
+  return hit;
+}
+
+// A line from `bank` for `who` that isn't among its last few. The pick holds for the whole tick,
+// so redraws don't change the bubble. `said` is the memory: address -> { tick, line, recent }.
+function pick(bank, who, tick, said, name) {
+  const m = (said[who] ??= { tick: -1, line: "", recent: [] });
+  if (m.tick !== tick) {
+    let i = (tick + hash(who)) % bank.length;
+    for (let n = 0; n < bank.length && m.recent.includes(bank[i]); n++) i = (i + 1) % bank.length;
+    m.line = bank[i];
+    m.tick = tick;
+    m.recent = [...m.recent, bank[i]].slice(-Math.min(REMEMBER, bank.length - 1));
+  }
+  return m.line.replace("{name}", name);
+}
+
 // Every live terminal whose program reports a status, from `terminals()` (hc ls),
 // named by its space when it has a pane (`agents()`), else by its hc name.
 // The app comes from the program's own report (OSC 7501 `app`, e.g. "claude-code"),
 // else the app's program table key (e.g. "claude"), else hc's `agent` word.
-export function collect(terminals, agents) {
+// `title` is the agent's task as its terminal title; `since` is when its tab began working (from `spaces`).
+export function collect(terminals, agents, spaces = []) {
   const space = new Map(agents.map((a) => [a.address, a.space_name || a.tab_name]));
+  const title = new Map(agents.map((a) => [a.address, { text: a.title || null, tab: a.tab }]));
+  const working = new Map(spaces.flatMap((s) => s.tabs ?? []).map((t) => [t.id, t.working_since]));
   const live = terminals.filter((t) => t.status && t.state !== "exited" && t.state !== "finished");
   const ids = new Set(live.map((t) => t.address));
   return live.map((t) => ({
@@ -47,6 +101,8 @@ export function collect(terminals, agents) {
     app: t.report?.app ?? t.program?.key ?? t.agent ?? null,
     label: space.get(t.address) || t.name || t.agent || t.address,
     parent: ids.has(t.parent) ? t.parent : null,
+    title: title.get(t.address)?.text ?? null,
+    since: t.status === "working" ? working.get(title.get(t.address)?.tab) ?? null : null,
   }));
 }
 
@@ -69,14 +125,21 @@ export function landing(trail) {
 // walk to their parent, chat beside it, wander off. Blocked or done children
 // go to their parent and stay. Blocked pets without a parent run to the front.
 // Pets in `held` (being dragged, or just dropped) stay at their previous spot.
-export function place(list, prev, width, tick, roam, rand = Math.random, held = new Set()) {
+//
+// `opts`: `favs` ({address: true}) sorts favorites right after blocked pets; `offset` scrolls
+// the strip when more pets run than fit; `kinds` ({address: sprite}) overrides the art;
+// `said` is the dialogue memory (see `pick`).
+export function place(list, prev, width, tick, roam, rand = Math.random, held = new Set(), opts = {}) {
+  const { favs = {}, offset = 0, kinds = {}, said = {} } = opts;
   const maxX = Math.max(LEFT, width - SLOT);
   const clamp = (x) => Math.min(maxX, Math.max(LEFT, Math.round(x)));
   const byId = new Map(list.map((p) => [p.address, p]));
-  const max = Math.max(1, Math.floor((width - LEFT) / SLOT));
+  const max = capacity(width);
+  const rank = (p) => (p.status === "blocked" ? 0 : favs[p.address] ? 1 : 2 + (ORDER[p.status] ?? 4));
+  const start = Math.min(Math.max(0, offset), Math.max(0, list.length - max));
   const shown = [...list]
-    .sort((a, b) => (ORDER[a.status] ?? 4) - (ORDER[b.status] ?? 4) || a.address.localeCompare(b.address))
-    .slice(0, max);
+    .sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
+    .slice(start, start + max);
   const out = new Map();
   const phase = tick % 3; // 0: walk to parent, 1: chat, 2: wander
 
@@ -113,7 +176,7 @@ export function place(list, prev, width, tick, roam, rand = Math.random, held = 
     out.set(p.address, {
       ...p,
       seed,
-      kind: kindFor(p.app, seed),
+      kind: kinds[p.address] ?? kindFor(p.app, seed),
       x: clamp(x),
       meet,
       say: null,
@@ -124,9 +187,8 @@ export function place(list, prev, width, tick, roam, rand = Math.random, held = 
   for (const c of out.values()) {
     if (!c.meet) continue;
     const parent = out.get(c.parent);
-    const lines = ANSWER[c.status] ?? ANSWER.idle;
-    c.say = lines[(tick + c.seed) % lines.length];
-    if (!parent.say) parent.say = REPLY[c.status] ?? ASK[(tick + parent.seed) % ASK.length];
+    c.say = pick(ANSWER[c.status] ?? ANSWER.idle, c.address, tick, said, parent.label);
+    if (!parent.say) parent.say = pick(REPLY[c.status] ?? ASK, parent.address, tick, said, c.label);
   }
   return [...out.values()];
 }

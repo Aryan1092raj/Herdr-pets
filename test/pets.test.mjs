@@ -1,6 +1,9 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { hash, collect, place, kindFor, landing, KINDS, SLOT, LEFT } from "../mods/herdr-pets/pets.js";
+import {
+  hash, collect, place, kindFor, landing, runtime, describe, transitions, capacity,
+  KINDS, EXTRA, SPRITES, ANSWER, REPLY, SLOT, LEFT,
+} from "../mods/herdr-pets/pets.js";
 
 const terminal = (address, status, extra = {}) => ({ address, status, name: address, ...extra });
 const agents = (list, prev = {}, width = 600, tick = 0, roam = false) =>
@@ -29,8 +32,8 @@ test("collect keeps only live terminals with status and resolves labels", () => 
   );
 
   assert.deepEqual(out, [
-    { address: "space", status: "working", app: null, label: "The Space", parent: null },
-    { address: "plain", status: "blocked", app: null, label: "hc-plain", parent: null },
+    { address: "space", status: "working", app: null, label: "The Space", parent: null, title: null, since: null },
+    { address: "plain", status: "blocked", app: null, label: "hc-plain", parent: null, title: null, since: null },
   ]);
 });
 
@@ -143,28 +146,28 @@ test("a blocked child stands beside its parent and asks for help", () => {
   const out = agents(
     [
       { address: "parent", status: "working" },
-      { address: "child", status: "blocked", parent: "parent" },
+      { address: "child", label: "child", status: "blocked", parent: "parent" },
     ],
     { parent: { x: LEFT } },
   );
   const parent = out.find(({ address }) => address === "parent");
   const child = out.find(({ address }) => address === "child");
   assert.equal(child.x, parent.x + SLOT);
-  assert.equal(child.say, "stuck, help?");
-  assert.equal(parent.say, "on my way");
+  assert.ok(ANSWER.blocked.includes(child.say));
+  assert.ok(REPLY.blocked.map((l) => l.replace("{name}", "child")).includes(parent.say));
 });
 
 test("a done child says done and its parent replies nice", () => {
   const out = agents(
     [
       { address: "parent", status: "working" },
-      { address: "child", status: "done", parent: "parent" },
+      { address: "child", label: "child", status: "done", parent: "parent" },
     ],
   );
   const parent = out.find(({ address }) => address === "parent");
   const child = out.find(({ address }) => address === "child");
-  assert.equal(child.say, "done ✓");
-  assert.equal(parent.say, "nice!");
+  assert.ok(ANSWER.done.includes(child.say));
+  assert.ok(REPLY.done.map((l) => l.replace("{name}", "child")).includes(parent.say));
 });
 
 test("a roaming working parent holds its x while its working child approaches or chats", () => {
@@ -240,4 +243,60 @@ test("a held pet stays where it was dropped, even blocked or as a child", () => 
   assert.equal(at.kid, 400);
   assert.equal(at.lone, 300);
   assert.equal(out.find((p) => p.address === "kid").say, null);
+});
+
+test("collect carries the task title and when the tab began working", () => {
+  const [pet, quiet] = collect(
+    [terminal("a", "working"), terminal("b", "idle")],
+    [{ address: "a", title: "fix the build", tab: "tab1" }, { address: "b", title: "zsh", tab: "tab2" }],
+    [{ tabs: [{ id: "tab1", working_since: 1000 }, { id: "tab2", working_since: 5 }] }],
+  );
+  assert.equal(pet.title, "fix the build");
+  assert.equal(pet.since, 1000);
+  assert.equal(quiet.since, null); // only working pets carry a start time
+});
+
+test("runtime and describe format a pet's tooltip", () => {
+  assert.equal(runtime(45_000), "45s");
+  assert.equal(runtime(192_000), "3m 12s");
+  assert.equal(runtime(3_900_000), "1h 5m");
+  assert.equal(describe({ label: "api", status: "working", since: 1000, title: "fix tests" }, 66_000), "api · working 1m 5s · fix tests");
+  assert.equal(describe({ label: "api", status: "idle", title: "api" }, 0), "api · idle");
+});
+
+test("transitions reports only pets that turned blocked or done, not first sightings", () => {
+  const last = {};
+  assert.deepEqual(transitions(last, [{ address: "a", status: "blocked" }]), []);
+  assert.deepEqual(transitions(last, [{ address: "a", status: "working" }]), []);
+  assert.deepEqual(transitions(last, [{ address: "a", status: "done" }]).map((p) => p.address), ["a"]);
+  assert.deepEqual(transitions(last, [{ address: "a", status: "done" }]), []);
+});
+
+test("favorites follow blocked pets, and the offset scrolls past what fits", () => {
+  const width = LEFT + SLOT * 2;
+  const list = ["a", "b", "c", "d"].map((address) => ({ address, status: "idle" }));
+  list.push({ address: "z", status: "blocked" });
+  const first = (opts) => place(list, {}, width, 0, false, () => 0.5, new Set(), opts).map((p) => p.address);
+  assert.deepEqual(first({ favs: { d: true } }), ["z", "d"]);
+  assert.deepEqual(first({ offset: 2 }), ["b", "c"]);
+  assert.deepEqual(first({ offset: 99 }), ["c", "d"]); // clamped to the last full page
+  assert.equal(capacity(width), 2);
+});
+
+test("a picked sprite overrides the automatic one", () => {
+  const [pet] = place([{ address: "a", status: "idle", app: "claude-code" }], {}, 400, 0, false, () => 0.5, new Set(), { kinds: { a: "frog" } });
+  assert.equal(pet.kind, "frog");
+  assert.ok(EXTRA.every((k) => SPRITES.includes(k) && !KINDS.includes(k)));
+});
+
+test("a speaker does not repeat its recent lines, and a tick's line holds across redraws", () => {
+  const said = {};
+  const list = [{ address: "p", status: "working" }, { address: "c", status: "working", parent: "p", label: "kid" }];
+  const line = (tick) => place(list, { p: { x: 400 - SLOT } }, 400, tick, false, () => 0.5, new Set(), { said })
+    .find((p) => p.address === "c").say;
+  const seen = [];
+  for (let tick = 1; tick <= 12; tick += 3) seen.push(line(tick)); // phase 1: the helper chats every third tick
+  assert.equal(line(10), seen[3]);
+  assert.equal(new Set(seen).size, seen.length);
+  assert.ok(seen.every((s) => ANSWER.working.includes(s)));
 });
