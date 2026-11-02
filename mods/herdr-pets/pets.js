@@ -14,7 +14,9 @@ const WANDER = 160; // how far a roaming pet walks in one beat, px: keeps them s
 const THROW = 0.3; // release speed that counts as a throw, px/ms
 const GLIDE = 400; // a thrown pet carries on for this many ms worth of its speed
 
-const ORDER = { blocked: 0, done: 1, working: 2, idle: 3 };
+const ORDER = { blocked: 0, error: 0, done: 1, working: 2, idle: 3 };
+// Pets that need the person: they run to the front.
+const NEEDS = (status) => status === "blocked" || status === "error";
 const REMEMBER = 4; // lines a pet won't repeat until it has said this many others
 // "{name}" becomes the helper's label.
 export const ASK = ["how's it going?", "need anything?", "status?", "all good?", "{name}, how's it looking?", "any news?", "shout if you're stuck", "how far along?"];
@@ -55,8 +57,10 @@ export function runtime(ms) {
 // Tooltip and screen-reader text: name, status (with how long it has been working), and the agent's task.
 export function describe(p, now) {
   const status = p.status === "working" && p.since ? `working ${runtime(now - p.since)}` : p.status;
-  const task = p.title && p.title !== p.label ? p.title.slice(0, 80) : null;
-  return [p.label, status, task].filter(Boolean).join(" · ");
+  const text = p.note || p.title;
+  const task = text && text !== p.label ? text.slice(0, 80) : null;
+  const detail = [p.why ? `needs ${p.why}` : null, p.progress !== null && p.progress !== undefined ? `${p.progress}%` : null].filter(Boolean).join(", ");
+  return [p.label, detail ? `${status} (${detail})` : status, task].filter(Boolean).join(" · ");
 }
 
 // Pets that just turned blocked or done, given the statuses seen last time (updated in place).
@@ -64,7 +68,7 @@ export function describe(p, now) {
 export function transitions(last, list) {
   const hit = [];
   for (const p of list) {
-    if (last[p.address] && last[p.address] !== p.status && (p.status === "blocked" || p.status === "done")) hit.push(p);
+    if (last[p.address] && last[p.address] !== p.status && (NEEDS(p.status) || p.status === "done")) hit.push(p);
     last[p.address] = p.status;
   }
   return hit;
@@ -161,6 +165,10 @@ export function collect(terminals, agents, spaces = []) {
     title: title.get(t.address)?.text ?? null,
     since: t.status === "working" ? working.get(title.get(t.address)?.tab) ?? null : null,
     group: group(t),
+    // From the agent's own report (OSC 7501): its words for the task, how far along it is (0-100), and why it is blocked.
+    note: typeof t.report?.msg === "string" && t.report.msg ? t.report.msg : null,
+    progress: Number.isFinite(t.report?.progress) ? Math.min(100, Math.max(0, Math.round(t.report.progress))) : null,
+    why: typeof t.report?.kind === "string" ? t.report.kind : null,
   }));
 }
 
@@ -193,7 +201,7 @@ export function place(list, prev, width, tick, roam, rand = Math.random, held = 
   const maxX = Math.max(LEFT, width - SLOT);
   const byId = new Map(list.map((p) => [p.address, p]));
   const max = capacity(width);
-  const rank = (p) => (p.status === "blocked" ? 0 : favs[p.address] ? 1 : 2 + (ORDER[p.status] ?? 4));
+  const rank = (p) => (NEEDS(p.status) ? 0 : favs[p.address] ? 1 : 2 + (ORDER[p.status] ?? 4));
   const start = Math.min(Math.max(0, offset), Math.max(0, list.length - max));
   const shown = [...list]
     .sort((a, b) => rank(a) - rank(b) || a.address.localeCompare(b.address))
@@ -241,7 +249,7 @@ export function place(list, prev, width, tick, roam, rand = Math.random, held = 
       } else if (roam) {
         x = was + (rand() * 2 - 1) * WANDER;
       }
-    } else if (p.status === "blocked") {
+    } else if (NEEDS(p.status)) {
       x = seg.lo + (front.get(seg.lo) ?? 0) * SLOT;
       front.set(seg.lo, (front.get(seg.lo) ?? 0) + 1);
     } else if (roam && !(phase !== 2 && kids.some((c) => c.status === "working"))) {

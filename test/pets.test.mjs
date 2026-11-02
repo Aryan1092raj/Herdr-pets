@@ -32,8 +32,8 @@ test("collect keeps only live terminals with status and resolves labels", () => 
   );
 
   assert.deepEqual(out, [
-    { address: "space", status: "working", app: null, label: "The Space", parent: null, title: null, since: null, group: "" },
-    { address: "plain", status: "blocked", app: null, label: "hc-plain", parent: null, title: null, since: null, group: "" },
+    { address: "space", status: "working", app: null, label: "The Space", parent: null, title: null, since: null, group: "", note: null, progress: null, why: null },
+    { address: "plain", status: "blocked", app: null, label: "hc-plain", parent: null, title: null, since: null, group: "", note: null, progress: null, why: null },
   ]);
 });
 
@@ -375,4 +375,21 @@ test("collect puts a pane-less helper in its parent's space", () => {
     [{ address: "p", space: "sp1" }],
   );
   assert.deepEqual(out.map((p) => p.group), ["sp1", "sp1"]);
+});
+
+test("collect reads the agent's own words, progress and block reason from its report", () => {
+  const [a, b] = collect([
+    terminal("a", "blocked", { report: { app: "x", msg: "edit config", progress: 41.6, kind: "permission" } }),
+    terminal("b", "working", { report: { progress: 300, msg: "" } }),
+  ], []);
+  assert.deepEqual([a.note, a.progress, a.why], ["edit config", 42, "permission"]);
+  assert.deepEqual([b.note, b.progress, b.why], [null, 100, null]);
+  assert.equal(describe({ ...a, label: "api", title: "ignored" }, 0), "api · blocked (needs permission, 42%) · edit config");
+});
+
+test("an errored pet needs attention like a blocked one: front of the strip, sound, sorted first", () => {
+  const out = place([{ address: "w", status: "working" }, { address: "e", status: "error" }], {}, 400, 0, false, () => 0.5);
+  assert.equal(out[0].address, "e");
+  assert.equal(out[0].x, LEFT);
+  assert.deepEqual(transitions({ e: "working" }, [{ address: "e", status: "error" }]).map((p) => p.address), ["e"]);
 });
