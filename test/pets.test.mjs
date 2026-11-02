@@ -393,3 +393,12 @@ test("an errored pet needs attention like a blocked one: front of the strip, sou
   assert.equal(out[0].x, LEFT);
   assert.deepEqual(transitions({ e: "working" }, [{ address: "e", status: "error" }]).map((p) => p.address), ["e"]);
 });
+
+test("recap treats an errored agent as still open", () => {
+  const state = { runs: {}, finished: [] };
+  const at = (now, ...pets) => recap(state, pets.map(([address, status]) => ({ address, status })), now);
+  at(0, ["a", "working"], ["b", "working"]);
+  at(1000, ["a", "done"], ["b", "error"]);
+  assert.equal(at(2000, ["a", "done"], ["b", "error"]), null);
+  assert.equal(at(3000, ["a", "done"], ["b", "idle"]), "2 agents finished, longest 3s");
+});

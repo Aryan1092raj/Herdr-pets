@@ -55,7 +55,7 @@ Agents started by another agent through herdr-core (`hc run`, for example a code
 | Drag a pet | picks it up and moves it; it stays put for a moment after you drop it |
 | Flick and let go | throws it, and it glides to a stop |
 | Hover a pet | tooltip with its name, status, how long it has been working, its progress and its task |
-| Right-click a pet | menu: focus, peek, show as pane, restart, kill (asks twice), quick replies for a blocked agent (ask twice), mute sounds, star, and pick its color and sprite |
+| Right-click a pet | menu: focus, peek, show as pane, restart and kill (both ask twice), quick replies for a blocked agent (ask twice), mute sounds, star, and pick its color and sprite |
 | `▾` / `▴` at the left end | folds the strip to a thin bar, and opens it again |
 | `⚙` next to the arrow | opens the settings |
 | Scroll, or `‹` `›` at the right end | shows other pets when more agents run than fit |

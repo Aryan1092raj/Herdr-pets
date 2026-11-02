@@ -98,11 +98,11 @@ export function track(watch, list, now, limit = STUCK) {
 export const stalled = (watch, p, now, limit = STUCK) => p.status === "working" && !!watch[p.address] && now - watch[p.address].at >= limit;
 
 // A message when a batch of agents has all finished, else null. `state` is { runs, finished }, updated in place:
-// a pet is active while working or blocked, and counts as finished once it settles into done or idle.
+// a pet is active while working, blocked or errored, and counts as finished once it settles into done or idle.
 export function recap(state, list, now) {
   const active = new Set();
   for (const p of list) {
-    if (p.status !== "working" && p.status !== "blocked") continue;
+    if (p.status !== "working" && !NEEDS(p.status)) continue;
     active.add(p.address);
     state.runs[p.address] ??= p.since ?? now;
   }

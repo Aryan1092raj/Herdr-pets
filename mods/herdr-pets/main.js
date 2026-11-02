@@ -97,7 +97,7 @@ function toggleMute(address) {
 async function loadReplies() {
   try {
     const list = JSON.parse((await readTextFile(`${appHome()}/mods/${MOD}/replies.json`)) ?? "{}").replies;
-    return Array.isArray(list) ? list.filter((r) => typeof r === "string" && r.trim() && r.length <= 80).slice(0, 4) : [];
+    return Array.isArray(list) ? list.filter((r) => typeof r === "string" && r.trim() && r.length <= 80 && !/[\u0000-\u001f\u007f]/.test(r)).slice(0, 4) : [];
   } catch {
     return [];
   }
@@ -109,6 +109,7 @@ function menuInfo(address) {
   return {
     pane: panes().find((p) => p.terminal === address),
     restart: term?.program?.agent && term.program.key ? [term.program.key] : null,
+    cwd: panes().find((p) => p.terminal === address)?.cwd ?? term?.cwd ?? null,
   };
 }
 
@@ -151,6 +152,7 @@ export default class Pets extends View {
     this.sigs = {}; // address -> hash of its screen at the last look
     this.stuck = new Set(); // addresses that look stuck now
     this.working = []; // addresses working at the last layout
+    this.needs = []; // addresses blocked or errored at the last layout
     this.recap = { runs: {}, finished: [] };
     this.replies = [];
     loadReplies().then((r) => { this.replies = r; });
@@ -183,6 +185,8 @@ export default class Pets extends View {
     // Always track statuses, so turning sound on later doesn't replay old changes.
     for (const p of transitions(this.last, all)) if (sound && !muted[p.address]) playSound(p.status === "done" ? "done" : "blocked");
     this.working = all.filter((p) => p.status === "working").map((p) => p.address);
+    // Every blocked or errored agent, also those scrolled out of view, for the N key.
+    this.needs = all.filter((p) => p.status === "blocked" || p.status === "error").map((p) => p.address).sort();
     // A pet with no screen reading yet can't be judged, so it stays out of the stuck watch.
     const watched = stuck ? all.filter((p) => p.sig !== undefined) : [];
     // One toast for everything that just crossed the limit, so a dozen quiet agents don't bury the screen.
@@ -262,12 +266,12 @@ export default class Pets extends View {
       case "m": case "menu": case "shift-f10": return pet && openMenu(pet, this.replies);
       case "n": {
         // Jump to the next agent that is blocked, and open it.
-        const blocked = row.filter((p) => p.status === "blocked" || p.status === "error");
-        if (blocked.length === 0) return;
-        const next = blocked[(blocked.findIndex((p) => p.address === this.sel) + 1) % blocked.length];
-        this.sel = next.address;
+        if (this.needs.length === 0) return;
+        const next = this.needs[(this.needs.indexOf(this.sel) + 1) % this.needs.length];
+        this.sel = next;
+        this.offset = 0; // blocked and errored pets sort first
         cx.notify();
-        return run("agent.focus", { terminal: next.address });
+        return run("agent.focus", { terminal: next });
       }
     }
   }
@@ -425,7 +429,7 @@ function menuPanel(t, view) {
   const { favs, muted, kinds, colors } = prefs();
   const row = (id, text, onClick, color = t.foreground) => div().id(id).h(26).px(8).flex().items_center().rounded(5)
     .cursor_pointer().text_color(color).hover((s) => s.bg(t.hover)).accessibility_label(text).on_click(onClick).child(text);
-  const { pane, restart } = menuInfo(address);
+  const { pane, restart, cwd } = menuInfo(address);
   const arm = (key, run_) => (_e, cx) => {
     if (view.armed !== key) { view.armed = key; cx.notify(); return; }
     run_();
@@ -451,11 +455,11 @@ function menuPanel(t, view) {
     .child(row("focus", "Focus agent", () => { run("agent.focus", { terminal: address }); closeOverlay(props().overlay); }))
     .child(row("peek", "Peek", () => { run("terminal.peek", { terminal: address }); closeOverlay(props().overlay); }))
     .when(!pane, (el) => el.child(row("show", "Show as pane", () => { run("terminal.keep", { terminal: address }); closeOverlay(props().overlay); })))
-    .when(restart, (el) => el.child(row("restart", "Restart", () => {
+    // Restart ends the agent and starts its program again in the same folder; its conversation is not kept, so it asks twice.
+    .when(restart, (el) => el.child(row("restart", view.armed === "restart" ? "Really restart? Click again" : "Restart", arm("restart", () => {
       run("terminal.kill", { terminal: address });
-      run("terminal.open", { argv: restart, ...(pane?.cwd ? { folder: pane.cwd } : {}), place: "tab" });
-      closeOverlay(props().overlay);
-    })))
+      run("terminal.open", { argv: restart, ...(cwd ? { folder: cwd } : {}), place: "tab" });
+    }), t.blocked)))
     // Killing ends the agent for good, so the first click only asks.
     .child(row("kill", view.armed === "kill" ? "Really kill? Click again" : "Kill", arm("kill", () => run("terminal.kill", { terminal: address })), t.blocked))
     // A reply types into a blocked agent's prompt, so each one asks twice. `--force` is what lets hc type into a blocked terminal.
